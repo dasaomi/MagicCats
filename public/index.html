@@ -1,330 +1,417 @@
 <!doctype html>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Дуэль — одновременный ход (MVP)</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>MagicCats — дуэль</title>
 <style>
-  body{font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;background:#14161a;color:#eee;max-width:780px;margin:24px auto;padding:0 16px}
-  h2{margin:.2em 0 .4em}
-  .card{background:#1b1f27;border:1px solid #2a2f3a;border-radius:12px;padding:14px;margin:12px 0}
-  input,button{font-size:16px;padding:10px;border-radius:10px;border:1px solid #2a2f3a;background:#0f1420;color:#eee}
+  :root{
+    --bg:#151316;
+    --panel:#201e23;
+    --line:#2a2a32;
+    --txt:#eaeaf0;
+    --muted:#bfc3cf;
+    --hp:#6ee776;
+    --mp:#63b7ff;
+    --accent:#f7c66a;
+    --danger:#ff6b6b;
+    --win:#6dd96d; --lose:#ff7777; --draw:#ffd166;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:radial-gradient(120% 90% at 50% 10%, #2b2630 0%, var(--bg) 70%);
+    color:var(--txt); font:16px/1.4 system-ui,Segoe UI,Roboto,Arial,sans-serif;
+    min-height:100svh; display:flex; align-items:center; justify-content:center;
+  }
+  .wrap{width:min(720px,100%); padding:16px}
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:14px; margin:10px 0}
+
+  /* ===== HUD ===== */
+  #battleUI{position:relative; overflow:hidden}
+  .topHud{
+    display:flex; justify-content:space-between; align-items:flex-start; padding:6px 4px 8px;
+    font-weight:800; letter-spacing:.5px; color:var(--accent);
+  }
+  .bigNum{font-size:34px}
+  .round{font-size:20px}
+  .centerBoard{
+    position:relative; margin:10px 0; padding:10px;
+    border:2px solid var(--accent); border-radius:14px; background-color:rgba(247,198,106,0.15);
+    height:220px; display:flex; align-items:center; justify-content:center; gap:24px;
+  }
+  .slot{
+    width:140px; height:140px; border:4px solid var(--accent); border-radius:999px;
+    display:flex; align-items:center; justify-content:center; background:#2a2530;
+    position:relative; box-shadow:0 0 0 3px rgba(0,0,0,.1) inset;
+  }
+  .icon{font-size:64px; filter:drop-shadow(0 2px 0 rgba(0,0,0,.35))}
+  .qmark{font-size:56px; color:#ddd}
+  .history{
+    position:absolute; right:-8px; top:8px; display:flex; flex-direction:column; gap:6px;
+  }
+  .hItem{display:flex; align-items:center; gap:4px; opacity:.9}
+  .hItem .mini{width:30px; height:30px; border-radius:999px; border:2px solid var(--accent);
+    display:flex; align-items:center; justify-content:center; background:#2a2530; font-size:18px}
+  .hItem.faded1{opacity:.6} .hItem.faded2{opacity:.3}
+
+  /* bars & avatars */
+  .bars{display:flex; align-items:center; gap:12px; margin:6px 0}
+  .avatar{width:68px; height:68px; border-radius:999px; border:6px solid var(--accent); background:#3a3242; position:relative}
+  .barBox{flex:1}
+  .bar{height:16px; background:#2b2e36; border-radius:999px; overflow:hidden; border:1px solid #3b3f4c}
+  .hp{--c:var(--hp)} .mp{--c:var(--mp)}
+  .fill{height:100%; width:100%; background:var(--c)}
+  .label{font-size:12px; color:var(--muted)}
+
+  /* buttons */
+  .pad{padding-top:6px}
+  .btnRow{display:flex; justify-content:space-between; gap:14px; margin-top:6px}
+  .skill{flex:1; aspect-ratio:1/1; border-radius:999px; border:4px solid var(--accent); background:#302a39; color:#fff;
+    font-size:22px; display:flex; align-items:center; justify-content:center; cursor:pointer; transition:.12s transform, .12s opacity}
+  .skill:disabled{opacity:.45; cursor:default}
+  .skill:active{transform:translateY(1px)}
+  .sFire .icon{font-size:34px} .sIce .icon{font-size:34px} .sAir .icon{font-size:34px}
+
+  .hint{margin-top:4px; font-size:12px; color:var(--muted)}
+  .center{display:flex; align-items:center; justify-content:center}
+  .win{color:var(--win)} .lose{color:var(--lose)} .draw{color:var(--draw)}
+
+  /* float damage */
+  .float{position:absolute; font-weight:900; font-size:26px; transform:translate(-50%,-10px); pointer-events:none; opacity:0; text-shadow:0 2px 0 rgba(0,0,0,.4)}
+  .float.show{animation:rise .9s ease-out forwards}
+  @keyframes rise{from{opacity:0; transform:translate(-50%,10px)} 35%{opacity:1} to{opacity:0; transform:translate(-50%,-40px)}}
+
+  /* Lobby (оставили минимально) */
+  .row{display:flex; gap:8px; flex-wrap:wrap}
+  input,button{font-size:16px; padding:10px; border-radius:10px; border:1px solid var(--line); background:#16161b; color:var(--txt)}
   button{cursor:pointer}
-  .row{display:flex;gap:8px;flex-wrap:wrap}
-  pre{background:#0f1420;color:#ddd;padding:10px;border-radius:8px;white-space:pre-wrap}
-  .small{opacity:.8;font-size:12px}
-  .overlay{position:fixed; inset:0; display:none; align-items:center; justify-content:center;
-    background:rgba(0,0,0,.65); z-index:9999; text-align:center;}
-  .overlay.show{display:flex;}
-  .overlay .box{font-size:72px; font-weight:800; padding:24px 32px; border-radius:16px; background:#0b0f18; border:1px solid #2a2f3a;}
-  .center{display:flex;align-items:center;justify-content:center}
-  .win{color:#6dd96d} .lose{color:#ff7777} .draw{color:#ffd166}
+  pre{background:#0f1420; color:#ddd; padding:10px; border-radius:8px; white-space:pre-wrap; overflow:auto; max-height:220px}
 </style>
 
-<h2>Дуэль — хост + приглашённый</h2>
+<div class="wrap">
 
-<!-- ЛОББИ -->
-<div id="lobby">
-  <div class="card">
+  <!-- ====== ЛОББИ ====== -->
+  <div id="lobby" class="card">
+    <h2 style="margin:.2em 0 .6em">MagicCats — лобби</h2>
     <div class="row">
       <input id="name" placeholder="Твоё имя" style="flex:1">
       <button id="btnCreate">Создать комнату</button>
     </div>
+
     <div id="hostBlock" style="display:none;margin-top:10px">
       <div>Код комнаты: <b id="roomCode"></b></div>
       <div>Токен приглашения: <b id="inviteToken"></b></div>
-      <div class="small">Отправь ссылку другу:</div>
       <div class="row" style="margin-top:6px">
         <input id="inviteLink" style="flex:1">
         <button id="copyLink">Копировать</button>
       </div>
+      <div class="hint">Отправь ссылку другу.</div>
     </div>
-  </div>
 
-  <div class="card">
+    <hr style="border:none;height:1px;background:#2a2f3a;margin:14px 0">
+
     <div class="row">
       <input id="joinName" placeholder="Имя гостя" style="flex:1">
     </div>
     <div class="row" style="margin-top:8px">
-      <input id="joinCode"  placeholder="Код комнаты (например, 7Y3KQ)" style="flex:1">
-      <input id="joinToken" placeholder="Токен (6 символов)" style="flex:1">
-      <button id="btnJoin">Войти по приглашению</button>
+      <input id="joinCode"  placeholder="Код комнаты (напр., 7Y3KQ)" style="flex:1">
+      <input id="joinToken" placeholder="Токен (6 симв.)" style="flex:1">
+      <button id="btnJoin">Войти</button>
     </div>
-    <div class="small" style="margin-top:6px">Можно открыть ссылку, которую дал хост — код и токен подставятся сами.</div>
-  </div>
 
-  <div class="card">
-    <div class="row">
-      <input id="msg" placeholder="сообщение (тест)" style="flex:1">
-      <button id="btnPing">Ping в комнату</button>
+    <div class="card" style="margin:12px -14px -14px; border-radius:0 0 16px 16px">
+      <div class="hint">Состояние комнаты</div>
+      <pre id="state"></pre>
     </div>
   </div>
 
-  <div class="card">
-    <h3>Состояние комнаты</h3>
-    <pre id="state"></pre>
-    <ul id="log"></ul>
+  <!-- ====== БОЙ ====== -->
+  <div id="battle" class="card" style="display:none">
+    <div id="battleUI">
+
+      <div class="topHud">
+        <div>ХОД <span class="bigNum" id="secLeft">15</span></div>
+        <div class="round">Раунд <span id="roundNow">1</span>/<span id="roundMax">3</span></div>
+      </div>
+
+      <!-- оппонент -->
+      <div class="bars">
+        <div class="avatar" id="oppAvatar"></div>
+        <div class="barBox" style="flex:1">
+          <div class="label">HP</div>
+          <div class="bar hp"><div class="fill" id="oppHpFill" style="width:100%"></div></div>
+          <div class="label" style="margin-top:6px">Мана</div>
+          <div class="bar mp"><div class="fill" id="oppMpFill" style="width:100%"></div></div>
+        </div>
+      </div>
+
+      <!-- центральное поле -->
+      <div class="centerBoard" id="board">
+        <div class="slot"><div id="myBigIcon" class="icon"></div></div>
+        <div class="slot"><div id="oppBigIcon" class="icon qmark">?</div></div>
+
+        <div class="history" id="history"></div>
+      </div>
+
+      <!-- ты -->
+      <div class="bars">
+        <div class="avatar" id="youAvatar"></div>
+        <div class="barBox" style="flex:1">
+          <div class="label">HP</div>
+          <div class="bar hp"><div class="fill" id="youHpFill" style="width:100%"></div></div>
+          <div class="label" style="margin-top:6px">Мана</div>
+          <div class="bar mp"><div class="fill" id="youMpFill" style="width:100%"></div></div>
+        </div>
+      </div>
+
+      <!-- кнопки -->
+      <div class="pad">
+        <div class="btnRow">
+          <button class="skill sFire"  id="btnFire"><span class="icon">🔥</span></button>
+          <button class="skill sAir"   id="btnShield"><span class="icon">🌬️</span></button>
+          <button class="skill sIce"   id="btnIce"><span class="icon">❄️</span></button>
+        </div>
+        <div class="hint" id="moveHint">Жди начала хода…</div>
+      </div>
+    </div>
   </div>
+
+  <!-- ====== ФИНАЛ ====== -->
+  <div id="result" class="card center" style="display:none">
+    <div style="text-align:center">
+      <h2 id="matchResultText">—</h2>
+      <div id="finalScore" class="hint"></div>
+      <div style="height:8px"></div>
+      <div class="hint">Статистика (за матч)</div>
+      <div id="youStats"  class="hint"></div>
+      <div id="oppStats"  class="hint"></div>
+    </div>
+  </div>
+
 </div>
 
-<!-- Оверлей отсчёта -->
-<div id="overlay" class="overlay"><div class="box" id="overlayText">3</div></div>
-
-<!-- БОЙ -->
-<section id="battle" style="display:none">
-  <div class="card">
-    <h3 id="roundTitle">Раунд 1 / 3</h3>
-    <div class="small">Ход #<span id="turnNo">0</span>. До конца: <span id="secLeft">15</span>с</div>
-  </div>
-
-  <div class="card">
-    <h4>Ты</h4>
-    <div>HP: <b id="youHp">30</b> / <span id="youHpMax">30</span></div>
-    <div>Мана: <b id="youMana">10</b> / <span id="youManaMax">10</span></div>
-  </div>
-
-  <div class="card">
-    <h4>Противник</h4>
-    <div>HP: <b id="oppHp">30</b> / <span id="oppHpMax">30</span></div>
-    <div>Мана: <b id="oppMana">10</b> / <span id="oppManaMax">10</span></div>
-  </div>
-
-  <div class="card">
-    <div class="row">
-      <button id="btnFire"  disabled>Огонь</button>
-      <button id="btnIce"   disabled>Лёд</button>
-      <button id="btnShield" disabled>Воздух</button>
-    </div>
-    <div class="small" id="moveHint">Жди начала хода…</div>
-    <div id="roundLog" class="small" style="margin-top:8px"></div>
-  </div>
-</section>
-
-<!-- ФИНАЛ МАТЧА -->
-<section id="result" style="display:none">
-  <div class="card center">
-    <h2 id="matchResultText">—</h2>
-  </div>
-  <div class="card">
-    <h3>Статистика заклинаний</h3>
-    <div class="row">
-      <div style="flex:1">
-        <h4>Ты</h4>
-        <div id="youStats"></div>
-      </div>
-      <div style="flex:1">
-        <h4>Противник</h4>
-        <div id="oppStats"></div>
-      </div>
-    </div>
-    <div class="small" id="finalScore"></div>
-  </div>
-</section>
+<!-- простенький “дзыньк” -->
+<audio id="ding" preload="auto">
+  <source src="data:audio/wav;base64,UklGRmQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABYBHQB+AAAAgAAAAP8AAP8A/wD/AP//AAD/AP8A/wAAAP8AAP//AP//AAAA/wAA//8A//8AAAAA" type="audio/wav">
+</audio>
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
-let socket = io();
-let code = null;
-let isHost = false;
-let myRole = null;
-let oppRole = null;
-
+/* ===== helpers & state ===== */
 const $ = id => document.getElementById(id);
-const log = t => { const li=document.createElement('li'); li.textContent=t; $('log').appendChild(li); };
-const setState = s => { $('state').textContent = JSON.stringify(s,null,2); };
+const socket = io();
 
-function buildInviteLink(code, token){
-  const url = new URL(window.location.href);
-  url.searchParams.set('code', code);
-  url.searchParams.set('token', token);
-  return url.toString();
-}
-function showOverlay(text){ $('overlayText').innerHTML = text; $('overlay').classList.add('show'); }
-function hideOverlay(){ $('overlay').classList.remove('show'); }
-function setButtonsEnabled(on){
-  $('btnFire').disabled = !on;
-  $('btnIce').disabled = !on;
-  $('btnShield').disabled = !on;
+let code=null, isHost=false, myRole=null, oppRole=null;
+let hpMax=30, mpMax=10;
+
+const ICON = { fire:'🔥', ice:'❄️', shield:'🌬️', none:'' };
+
+function setBtnsEnabled(on){
+  $('btnFire').disabled = $('btnIce').disabled = $('btnShield').disabled = !on;
   $('moveHint').textContent = on ? 'Выбери действие по таймеру' : 'Ожидание следующего хода…';
 }
 
-// Создать
-$('btnCreate').onclick = ()=>{ socket.emit('create', { name: $('name').value.trim() || 'Host' }); };
+function setBars(role, hp, mp){
+  const hpFill = role==='me' ? $('youHpFill') : $('oppHpFill');
+  const mpFill = role==='me' ? $('youMpFill') : $('oppMpFill');
+  hpFill.style.width = Math.max(0, Math.min(100, Math.round(hp/hpMax*100))) + '%';
+  mpFill.style.width = Math.max(0, Math.min(100, Math.round(mp/mpMax*100))) + '%';
+}
+
+function floatDamage(targetEl, value, isMe){
+  const el = document.createElement('div');
+  el.className = 'float show';
+  el.style.left = '50%';
+  el.style.color = value>0 ? (isMe? 'var(--danger)' : 'var(--danger)') : 'var(--muted)';
+  el.textContent = value>0 ? `-${value}` : '';
+  targetEl.appendChild(el);
+  setTimeout(()=> el.remove(), 1000);
+}
+
+function pushHistory(myAct, oppAct, winner){
+  // winner: 'host'|'guest'|'draw' (кто нанес урон / по треугольнику)
+  const box = $('history');
+  // смещаем существующие и добавляем классы faded
+  [...box.children].forEach((c,i)=>{
+    c.classList.remove('faded1','faded2');
+    c.classList.add(i===0?'faded1':'faded2');
+    if(i>=2) c.style.opacity=.25;
+  });
+
+  const item = document.createElement('div');
+  item.className = 'hItem';
+  const top = document.createElement('div');
+  const bottom = document.createElement('div');
+  top.className = bottom.className = 'mini';
+
+  const myMini  = document.createElement('div'); myMini.className='mini'; myMini.textContent=ICON[myAct||'none']||'·';
+  const oppMini = document.createElement('div'); oppMini.className='mini'; oppMini.textContent=ICON[oppAct||'none']||'·';
+
+  // победивший сверху: если ничья — наш сверху
+  if (winner==='draw') { top.textContent = ICON[myAct]||'·'; bottom.textContent = ICON[oppAct]||'·'; }
+  else if ((winner==='host' && isHost) || (winner==='guest' && !isHost)) {
+    top.textContent = ICON[myAct]||'·'; bottom.textContent = ICON[oppAct]||'·';
+  } else {
+    top.textContent = ICON[oppAct]||'·'; bottom.textContent = ICON[myAct]||'·';
+  }
+
+  item.appendChild(top);
+  item.appendChild(bottom);
+  box.prepend(item);
+  // оставляем только 3
+  while(box.children.length>3) box.lastChild.remove();
+}
+
+/* ===== Lobby ===== */
+$('btnCreate').onclick = ()=> socket.emit('create', { name: $('name').value.trim() || 'Host' });
 socket.on('created', ({code:roomCode, inviteToken})=>{
-  isHost = true;
-  code = roomCode;
+  isHost = true; code = roomCode;
   $('roomCode').textContent = roomCode;
   $('inviteToken').textContent = inviteToken;
-  $('inviteLink').value = buildInviteLink(roomCode, inviteToken);
-  $('hostBlock').style.display = 'block';
+  const url = new URL(location.href); url.searchParams.set('code',roomCode); url.searchParams.set('token',inviteToken);
+  $('inviteLink').value = url.toString();
+  $('hostBlock').style.display='block';
 });
-
-// Войти
 $('btnJoin').onclick = ()=>{
-  const c = $('joinCode').value.trim();
-  const t = $('joinToken').value.trim();
-  const n = $('joinName').value.trim() || 'Guest';
-  if(!c || !t){ alert('Нужны код и токен'); return; }
-  socket.emit('joinWithToken', { code:c, token:t, name:n });
-};
-socket.on('joined', (d)=>{ log('Вошёл в комнату ' + d.code); });
-
-// Состояние/события/ошибки
-socket.on('state', setState);
-socket.on('event', (e)=> log(`[${e.type}] ${e.text||''} от ${e.from||''}`));
-socket.on('error_msg', (m)=> { log('Ошибка: ' + m); alert(m); });
-
-// Ping
-$('btnPing').onclick = ()=>{
-  if(!code) code = $('joinCode').value.trim();
-  if(!code) return alert('Сначала создай комнату или присоединись');
-  socket.emit('ping_room', { code, text: $('msg').value || 'hi' });
+  const c=$('joinCode').value.trim(), t=$('joinToken').value.trim(), n=$('joinName').value.trim()||'Guest';
+  if(!c||!t) return alert('Нужны код и токен');
+  socket.emit('joinWithToken', {code:c, token:t, name:n});
 };
 
-// Автозаполнение из ссылки
-(function initFromURL(){
-  const params = new URLSearchParams(location.search);
-  const c = params.get('code'), t = params.get('token');
-  if(c && t){ $('joinCode').value = c; $('joinToken').value = t; }
+/* ===== Auto-fill from URL ===== */
+(() => {
+  const p = new URLSearchParams(location.search);
+  const c=p.get('code'), t=p.get('token'); if(c&&t){ $('joinCode').value=c; $('joinToken').value=t; }
 })();
 
-// ===== Отсчёт/старт боя =====
+socket.on('state', s => { $('state').textContent = JSON.stringify(s,null,2); });
+socket.on('error_msg', m=> alert(m));
+
+/* ===== Countdown / Start ===== */
 socket.on('countdown', ({n})=>{
-  $('lobby').style.filter = 'blur(3px)'; showOverlay(n);
+  $('lobby').style.display='block';
 });
-socket.on('countdown_cancel', ()=>{
-  hideOverlay(); $('lobby').style.filter = 'none'; log('Отсчёт отменён — ждём соперника.');
+socket.on('duel_start', s=>{
+  myRole = isHost ? 'host':'guest'; oppRole = myRole==='host'?'guest':'host';
+  hpMax = s.hpMax; mpMax = s.manaMax;
+
+  $('lobby').style.display='none';
+  $('result').style.display='none';
+  $('battle').style.display='block';
+
+  $('roundNow').textContent = s.round;
+  $('roundMax').textContent = s.maxRounds;
+
+  setBars('me',    s.hp[myRole],  s.mana[myRole]);
+  setBars('opp',   s.hp[oppRole], s.mana[oppRole]);
+
+  $('history').innerHTML='';
+  $('myBigIcon').textContent='';
+  $('oppBigIcon').textContent='?';
+  setBtnsEnabled(false);
 });
-socket.on('duel_start', (s)=>{
-  myRole = isHost ? 'host' : 'guest';
-  oppRole = myRole === 'host' ? 'guest' : 'host';
-  hideOverlay(); $('lobby').style.display = 'none';
-  $('battle').style.display = 'block';
-  $('result').style.display = 'none';
 
-  $('roundTitle').textContent = `Раунд ${s.round} / ${s.maxRounds}`;
-  $('youHp').textContent      = s.hp[myRole];   $('youHpMax').textContent   = s.hpMax;
-  $('youMana').textContent    = s.mana[myRole]; $('youManaMax').textContent = s.manaMax;
-  $('oppHp').textContent      = s.hp[oppRole];  $('oppHpMax').textContent   = s.hpMax;
-  $('oppMana').textContent    = s.mana[oppRole];$('oppManaMax').textContent = s.manaMax;
-
-  setButtonsEnabled(false);
-  $('roundLog').textContent = '';
-});
-
-// ===== Одновременный ход =====
-let secTicker = null;
-function startSecTimer(deadlineTs){
-  stopSecTimer();
-  const tick = ()=>{
-    const left = Math.max(0, Math.ceil((deadlineTs - Date.now())/1000));
+/* ===== Turn start / timer ===== */
+let secTimer=null;
+function startTimer(deadlineTs){
+  stopTimer();
+  const tick=()=>{
+    const left = Math.max(0, Math.ceil((deadlineTs-Date.now())/1000));
     $('secLeft').textContent = left;
-    if (left <= 0) stopSecTimer();
+    if(left<=0) stopTimer();
   };
-  tick();
-  secTicker = setInterval(tick, 200);
+  tick(); secTimer=setInterval(tick, 200);
 }
-function stopSecTimer(){ if(secTicker){ clearInterval(secTicker); secTicker=null; } }
+function stopTimer(){ if(secTimer){clearInterval(secTimer); secTimer=null;} }
 
 socket.on('turn_start', ({round, maxRounds, turnNo, deadlineTs})=>{
-  $('roundTitle').textContent = `Раунд ${round} / ${maxRounds}`;
-  $('turnNo').textContent = turnNo;
-  setButtonsEnabled(true);
-  $('moveHint').textContent = 'Выбери действие по таймеру';
-  startSecTimer(deadlineTs);
+  $('roundNow').textContent = round; $('roundMax').textContent = maxRounds;
+  $('myBigIcon').textContent=''; $('oppBigIcon').textContent='?';
+  setBtnsEnabled(true);
+  startTimer(deadlineTs);
 });
 
+/* ===== Choose ===== */
 function choose(action){
-  if(!code){ code = $('joinCode').value.trim(); }
-  const role = isHost ? 'host' : 'guest';
-  setButtonsEnabled(false);
-  $('moveHint').textContent = 'Выбор отправлен…';
+  if(!code) code = $('joinCode').value.trim();
+  const role = isHost?'host':'guest';
+  setBtnsEnabled(false);
+  $('myBigIcon').textContent = ICON[action]||'';
   socket.emit('choose_action', { code, role, action });
 }
-$('btnFire').onclick   = ()=> choose('fire');
-$('btnIce').onclick    = ()=> choose('ice');
-$('btnShield').onclick = ()=> choose('shield');
+$('btnFire').onclick  = ()=> choose('fire');
+$('btnIce').onclick   = ()=> choose('ice');
+$('btnShield').onclick= ()=> choose('shield');
 
+/* ===== Feedback while choosing ===== */
 socket.on('action_made', ({by, action})=>{
-  const myRoleNow = isHost ? 'host' : 'guest';
-  const who = (by === myRoleNow) ? 'Ты' : 'Соперник';
-  if (by === myRoleNow) {
-    $('roundLog').innerHTML += `<div>${who} выбрал: ${action}</div>`;
-  } else {
-    $('roundLog').innerHTML += `<div>${who} сделал выбор</div>`;
+  if(by === (isHost?'host':'guest')){
+    // мы — уже показали большую иконку
+  }else{
+    $('oppBigIcon').textContent = '？'; // скрываем до конца хода
   }
 });
 
-socket.on('turn_end', ({reason, turnNo, actions, actionsRaw, actionsUsed, damage, hp, mana})=>{
-  stopSecTimer();
-  setButtonsEnabled(false);
+/* ===== Turn end (resolve) ===== */
+socket.on('turn_end', ({reason, turnNo, actionsRaw, actionsUsed, damage, hp, mana})=>{
+  stopTimer();
+  const myUse  = actionsUsed?.[isHost?'host':'guest'] || null;
+  const oppUse = actionsUsed?.[isHost?'guest':'host'] || null;
 
-  const srcRaw = actionsRaw ? actionsRaw : actions || {};
-  const myRaw  = srcRaw[isHost?'host':'guest'] || '—';
-  const opRaw  = srcRaw[isHost?'guest':'host'] || '—';
-  const myUse  = actionsUsed ? (actionsUsed[isHost?'host':'guest'] || '—') : myRaw;
-  const opUse  = actionsUsed ? (actionsUsed[isHost?'guest':'host'] || '—') : opRaw;
-  const myDmg  = damage ? (damage[isHost?'host':'guest']||0) : 0;
-  const opDmg  = damage ? (damage[isHost?'guest':'host']||0) : 0;
+  // показ противника после расчёта
+  $('oppBigIcon').textContent = ICON[oppUse] || '·';
 
-  $('roundLog').innerHTML += `<div><b>Ход #${turnNo} (${reason==='timeout'?'таймер':'оба выбрали'})</b> `
-    + `нажали: ты=${myRaw} →(${myUse}), он=${opRaw} →(${opUse}); `
-    + `урон: ты→${opDmg}, он→${myDmg}</div>`;
+  // bars & damage floats
+  const myHp = hp[isHost?'host':'guest'];
+  const opHp = hp[isHost?'guest':'host'];
+  const myMp = mana[isHost?'host':'guest'];
+  const opMp = mana[isHost?'guest':'host'];
 
-  if (hp && mana){
-    $('youHp').textContent   = hp[isHost?'host':'guest'];
-    $('oppHp').textContent   = hp[isHost?'guest':'host'];
-    $('youMana').textContent = mana[isHost?'host':'guest'];
-    $('oppMana').textContent = mana[isHost?'guest':'host'];
-  }
+  const dmgToOpp = damage?.host || 0;
+  const dmgToMe  = damage?.guest || 0;
+
+  setBars('me',  myHp, myMp);
+  setBars('opp', opHp, opMp);
+  if(dmgToMe>0)  floatDamage($('youAvatar'), dmgToMe, true);
+  if(dmgToOpp>0) floatDamage($('oppAvatar'), dmgToOpp, false);
+
+  // вычислим победителя пары для истории
+  let winner='draw';
+  if(dmgToOpp>0 && dmgToMe===0) winner = isHost ? 'host':'guest';
+  else if(dmgToMe>0 && dmgToOpp===0) winner = isHost ? 'guest':'host';
+
+  pushHistory(myUse, oppUse, winner);
+
+  // “дзыньк”
+  $('ding').currentTime = 0;
+  $('ding').play().catch(()=>{});
 });
 
-// Конец раунда
+/* ===== Round / Battle end ===== */
 socket.on('round_over', ({round, winner, hp, score})=>{
-  const text =
-    winner==='draw' ? `Раунд ${round}: ничья` :
-    (winner===(isHost?'host':'guest') ? `Раунд ${round}: ты выиграл` : `Раунд ${round}: ты проиграл`);
-  $('roundLog').innerHTML += `<div class="${winner==='draw'?'draw':(winner===(isHost?'host':'guest')?'win':'lose')}"><b>${text}</b></div>`;
-
-  // сбросим видимые полосы на значения, пришедшие в событии
-  $('youHp').textContent = hp[isHost?'host':'guest'];
-  $('oppHp').textContent = hp[isHost?'guest':'host'];
-
-  // маленькая плашка про счёт
-  $('roundLog').innerHTML += `<div class="small">Счёт по раундам: ${score.host} — ${score.guest}</div>`;
+  // ничего особого в UI пока не делаем — просто кнопки выключены
+  setBtnsEnabled(false);
 });
-
-// Финал матча
 socket.on('battle_over', ({matchWinner, score, used})=>{
-  // спрячем бой, покажем экран результата
-  $('battle').style.display = 'none';
-  $('result').style.display = 'block';
+  $('battle').style.display='none';
+  $('result').style.display='flex';
 
-  const winState =
+  const text =
     matchWinner==='draw' ? 'Ничья' :
     (matchWinner===(isHost?'host':'guest') ? 'Ты выиграл!' : 'Ты проиграл');
-
-  const cls = matchWinner==='draw' ? 'draw' :
-              (matchWinner===(isHost?'host':'guest') ? 'win' : 'lose');
-
-  $('matchResultText').textContent = winState;
-  $('matchResultText').className = cls;
-
-  // заполним статистику
-  function fmt(u){ return `Огонь: ${u.fire||0}, Лёд: ${u.ice||0}, Воздух: ${u.shield||0}`; }
-  $('youStats').textContent = fmt( used[isHost?'host':'guest'] || {} );
-  $('oppStats').textContent = fmt( used[isHost?'guest':'host'] || {} );
+  $('matchResultText').textContent = text;
+  $('matchResultText').className = matchWinner==='draw' ? 'draw' :
+    (matchWinner===(isHost?'host':'guest') ? 'win':'lose');
   $('finalScore').textContent = `Итог по раундам: ${score.host} — ${score.guest}`;
+
+  const myU = used[isHost?'host':'guest'] || {};
+  const opU = used[isHost?'guest':'host'] || {};
+  $('youStats').textContent = `Ты — 🔥:${myU.fire||0} ❄️:${myU.ice||0} 🌬️:${myU.shield||0}`;
+  $('oppStats').textContent = `Соперник — 🔥:${opU.fire||0} ❄️:${opU.ice||0} 🌬️:${opU.shield||0}`;
 });
 
-// копирование ссылки
+/* Copy invite link */
 $('copyLink').onclick = async ()=>{
-  const input = $('inviteLink');
-  const text = input.value;
   try{
-    if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(text);
-    } else {
-      input.select(); document.execCommand('copy'); input.setSelectionRange(0,0);
-    }
+    await navigator.clipboard.writeText($('inviteLink').value);
     alert('Ссылка скопирована');
   }catch{ alert('Не удалось — скопируй вручную.'); }
 };
