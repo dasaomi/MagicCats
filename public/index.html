@@ -84,6 +84,18 @@
   input,button{font-size:16px; padding:10px; border-radius:10px; border:1px solid var(--line); background:#16161b; color:var(--txt)}
   button{cursor:pointer}
   pre{background:#0f1420; color:#ddd; padding:10px; border-radius:8px; white-space:pre-wrap; overflow:auto; max-height:220px}
+
+  /* оверлей отсчёта 3..2..1 */
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:center;justify-content:center;z-index:100}
+  .overlay.show{display:flex}
+  #overlayNum{font-size:96px;font-weight:900;opacity:0;transform:scale(.6);transition:transform .25s ease, opacity .25s ease}
+  #overlayNum.pop{opacity:1;transform:scale(1)}
+
+  /* Turn-end flash on the board */
+  .boardFlashWin { box-shadow:0 0 0 3px rgba(109,217,109,.35) inset, 0 0 14px rgba(109,217,109,.35); animation:boardFlash .45s ease }
+  .boardFlashLose{ box-shadow:0 0 0 3px rgba(255,119,119,.35) inset, 0 0 14px rgba(255,119,119,.35); animation:boardFlash .45s ease }
+  .boardFlashDraw{ box-shadow:0 0 0 3px rgba(255,209,102,.35) inset, 0 0 14px rgba(255,209,102,.35); animation:boardFlash .45s ease }
+  @keyframes boardFlash { from{ transform:scale(.985) } to{ transform:scale(1) } }
 </style>
 
 <div class="wrap">
@@ -116,11 +128,17 @@
       <input id="joinToken" placeholder="Токен (6 симв.)" style="flex:1">
       <button id="btnJoin">Войти</button>
     </div>
+<hr style="border:none;height:1px;background:#2a2f3a;margin:14px 0">
+<div id="rulesShort" class="hint">
+  <b>Правила:</b>
+  <ul style="margin:6px 0 0 18px; padding-left:6px">
+    <li>Оба игрока одновременно выбирают: Огонь, Лёд, Воздух.</li>
+    <li>Треугольник: <b>Огонь &gt; Лёд</b>, <b>Лёд &gt; Воздух</b>, <b>Воздух &gt; Огонь</b>. Проигравший наносит 0.</li>
+    <li>Стоимость/урон: Огонь 3/7, Лёд 5/5, Воздух 2/2. После каждого хода мана +2.</li>
+    <li>Матч — до 3 раундов, раннее завершение при 2 победах одной стороны.</li>
+  </ul>
+</div>
 
-    <div class="card" style="margin:12px -14px -14px; border-radius:0 0 16px 16px">
-      <div class="hint">Состояние комнаты</div>
-      <pre id="state"></pre>
-    </div>
   </div>
 
   <!-- ====== БОЙ ====== -->
@@ -136,7 +154,8 @@
       <div class="bars">
         <div class="avatar" id="oppAvatar"></div>
         <div class="barBox" style="flex:1">
-          <div class="label">HP</div>
+          <div class="label name" id="oppName"></div>
+        <div class="label">HP</div>
           <div class="bar hp"><div class="fill" id="oppHpFill" style="width:100%"></div></div>
           <div class="label" style="margin-top:6px">Мана</div>
           <div class="bar mp"><div class="fill" id="oppMpFill" style="width:100%"></div></div>
@@ -146,7 +165,7 @@
       <!-- центральное поле -->
       <div class="centerBoard" id="board">
         <div class="slot"><div id="myBigIcon" class="icon"></div></div>
-        <div class="slot"><div id="oppBigIcon" class="icon qmark">?</div></div>
+        <div class="slot"><div id="oppBigIcon" class="icon"></div></div>
 
         <div class="history" id="history"></div>
       </div>
@@ -155,7 +174,8 @@
       <div class="bars">
         <div class="avatar" id="youAvatar"></div>
         <div class="barBox" style="flex:1">
-          <div class="label">HP</div>
+          <div class="label name" id="youName"></div>
+        <div class="label">HP</div>
           <div class="bar hp"><div class="fill" id="youHpFill" style="width:100%"></div></div>
           <div class="label" style="margin-top:6px">Мана</div>
           <div class="bar mp"><div class="fill" id="youMpFill" style="width:100%"></div></div>
@@ -183,12 +203,19 @@
       <div class="hint">Статистика (за матч)</div>
       <div id="youStats"  class="hint"></div>
       <div id="oppStats"  class="hint"></div>
+      <div style="height:10px"></div>
+      <button id="btnRematch">Переиграть матч</button>
     </div>
   </div>
 
 </div>
 
+
+<!-- Оверлей для 3..2..1 -->
+<div id="overlay" class="overlay"><div id="overlayNum">3</div></div>
+
 <!-- простенький “дзыньк” -->
+
 <audio id="ding" preload="auto">
   <source src="data:audio/wav;base64,UklGRmQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABYBHQB+AAAAgAAAAP8AAP8A/wD/AP//AAD/AP8A/wAAAP8AAP//AP//AAAA/wAA//8A//8AAAAA" type="audio/wav">
 </audio>
@@ -202,10 +229,30 @@ const socket = io();
 let code=null, isHost=false, myRole=null, oppRole=null;
 let hpMax=30, mpMax=10;
 
+
+// ===== Overlay helpers (3..2..1) =====
+let localTimer = null;
+function setOverlayNum(n){
+  const el = document.getElementById('overlayNum');
+  if(!el) return;
+  el.textContent = n;
+  el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop');
+}
+function showOverlay(n){ const ov = document.getElementById('overlay'); if(!ov) return; ov.classList.add('show'); setOverlayNum(n); }
+function hideOverlay(){ const ov = document.getElementById('overlay'); if(!ov) return; ov.classList.remove('show'); if(localTimer){clearInterval(localTimer); localTimer=null;} }
+
+
 const ICON = { fire:'🔥', ice:'❄️', shield:'🌬️', none:'' };
 
+
+const COST = { fire:3, ice:5, shield:2 };
+let youMana = 0;
+let names = { host:'Host', guest:'Guest' };
 function setBtnsEnabled(on){
-  $('btnFire').disabled = $('btnIce').disabled = $('btnShield').disabled = !on;
+  const btns = { fire:$('btnFire'), ice:$('btnIce'), shield:$('btnShield') };
+  for (const [skill, btn] of Object.entries(btns)) {
+    btn.disabled = !on || youMana < COST[skill];
+  }
   $('moveHint').textContent = on ? 'Выбери действие по таймеру' : 'Ожидание следующего хода…';
 }
 
@@ -214,6 +261,7 @@ function setBars(role, hp, mp){
   const mpFill = role==='me' ? $('youMpFill') : $('oppMpFill');
   hpFill.style.width = Math.max(0, Math.min(100, Math.round(hp/hpMax*100))) + '%';
   mpFill.style.width = Math.max(0, Math.min(100, Math.round(mp/mpMax*100))) + '%';
+  if (role==='me') youMana = mp;
 }
 
 function floatDamage(targetEl, value, isMe){
@@ -277,19 +325,45 @@ $('btnJoin').onclick = ()=>{
 };
 
 /* ===== Auto-fill from URL ===== */
+
+// Remove "Создать комнату" row for invited guest
+(() => {
+  try{
+    const p = new URLSearchParams(location.search);
+    const hasInvite = p.get('code') && p.get('token');
+    if (hasInvite) {
+      const btn = document.getElementById('btnCreate');
+      if (btn) {
+        const row = btn.closest('.row') || btn.parentElement;
+        if (row) row.remove();
+      }
+    }
+  }catch(e){}
+})();
+
 (() => {
   const p = new URLSearchParams(location.search);
   const c=p.get('code'), t=p.get('token'); if(c&&t){ $('joinCode').value=c; $('joinToken').value=t; }
 })();
 
-socket.on('state', s => { $('state').textContent = JSON.stringify(s,null,2); });
 socket.on('error_msg', m=> alert(m));
+socket.on('state', s => {
+  if (!s || !Array.isArray(s.players)) return;
+  for (const p of s.players) {
+    if (p.role === 'host') names.host = p.name || 'Host';
+    if (p.role === 'guest') names.guest = p.name || 'Guest';
+  }
+  // обновим подписи, если бой уже идёт
+  if (myRole) {
+    $('youName').textContent = (myRole==='host') ? names.host : names.guest;
+    $('oppName').textContent = (myRole==='host') ? names.guest : names.host;
+  }
+});
 
 /* ===== Countdown / Start ===== */
-socket.on('countdown', ({n})=>{
-  $('lobby').style.display='block';
-});
-socket.on('duel_start', s=>{
+socket.on('countdown', ({n})=>{ showOverlay(n); });
+socket.on('countdown_cancel', ()=>{ hideOverlay(); });
+socket.on('duel_start', s=>{ hideOverlay();
   myRole = isHost ? 'host':'guest'; oppRole = myRole==='host'?'guest':'host';
   hpMax = s.hpMax; mpMax = s.manaMax;
 
@@ -300,16 +374,31 @@ socket.on('duel_start', s=>{
   $('roundNow').textContent = s.round;
   $('roundMax').textContent = s.maxRounds;
 
+    $('youName').textContent = (myRole==='host') ? names.host : names.guest;
+  $('oppName').textContent = (myRole==='host') ? names.guest : names.host;
+
   setBars('me',    s.hp[myRole],  s.mana[myRole]);
   setBars('opp',   s.hp[oppRole], s.mana[oppRole]);
 
   $('history').innerHTML='';
   $('myBigIcon').textContent='';
-  $('oppBigIcon').textContent='?';
+  $('oppBigIcon').textContent='';
+  $('oppBigIcon').classList.remove('qmark');
   setBtnsEnabled(false);
+
 });
 
+// Переиграть матч
+document.getElementById('btnRematch').onclick = ()=>{
+  const c = code || (document.getElementById('joinCode')?.value.trim());
+  if(!c) return;
+  document.getElementById('result').style.display='none';
+  showOverlay(3);
+  socket.emit('restart_battle', { code: c });
+};
+
 /* ===== Turn start / timer ===== */
+
 let secTimer=null;
 function startTimer(deadlineTs){
   stopTimer();
@@ -324,13 +413,14 @@ function stopTimer(){ if(secTimer){clearInterval(secTimer); secTimer=null;} }
 
 socket.on('turn_start', ({round, maxRounds, turnNo, deadlineTs})=>{
   $('roundNow').textContent = round; $('roundMax').textContent = maxRounds;
-  $('myBigIcon').textContent=''; $('oppBigIcon').textContent='?';
+  $('myBigIcon').textContent=''; $('oppBigIcon').textContent=''; $('oppBigIcon').classList.remove('qmark');
   setBtnsEnabled(true);
   startTimer(deadlineTs);
 });
 
 /* ===== Choose ===== */
 function choose(action){
+  if (youMana < COST[action]) return;
   if(!code) code = $('joinCode').value.trim();
   const role = isHost?'host':'guest';
   setBtnsEnabled(false);
@@ -346,7 +436,7 @@ socket.on('action_made', ({by, action})=>{
   if(by === (isHost?'host':'guest')){
     // мы — уже показали большую иконку
   }else{
-    $('oppBigIcon').textContent = '？'; // скрываем до конца хода
+    const o=$('oppBigIcon'); o.textContent='?'; o.classList.add('qmark'); // показываем знак вопроса только после действия оппонента
   }
 });
 
@@ -358,6 +448,7 @@ socket.on('turn_end', ({reason, turnNo, actionsRaw, actionsUsed, damage, hp, man
 
   // показ противника после расчёта
   $('oppBigIcon').textContent = ICON[oppUse] || '·';
+  $('oppBigIcon').classList.remove('qmark');
 
   // bars & damage floats
   const myHp = hp[isHost?'host':'guest'];
@@ -383,6 +474,27 @@ socket.on('turn_end', ({reason, turnNo, actionsRaw, actionsUsed, damage, hp, man
   // “дзыньк”
   $('ding').currentTime = 0;
   $('ding').play().catch(()=>{});
+});
+
+
+// Visual board flash: win/lose/draw after each turn
+socket.on('turn_end', ({ damage }) => {
+  try {
+    const board = document.getElementById('board') || document.querySelector('.centerBoard');
+    if (!board) return;
+    const myKey  = isHost ? 'host' : 'guest';
+    const oppKey = myKey === 'host' ? 'guest' : 'host';
+    const myHit  = (damage && damage[myKey])  || 0;  // damage dealt by me
+    const oppHit = (damage && damage[oppKey]) || 0;  // damage dealt by opponent
+
+    let cls = 'boardFlashDraw';
+    if (myHit > 0 && oppHit === 0) cls = 'boardFlashWin';
+    else if (oppHit > 0 && myHit === 0) cls = 'boardFlashLose';
+
+    board.classList.remove('boardFlashWin','boardFlashLose','boardFlashDraw');
+    board.classList.add(cls);
+    setTimeout(() => board.classList.remove(cls), 520);
+  } catch (_) {}
 });
 
 /* ===== Round / Battle end ===== */
