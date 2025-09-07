@@ -15,14 +15,14 @@ const rnd = n => Array.from({length:n}, () => ABC[Math.floor(Math.random()*ABC.l
 
 // ==== минимальный баланс ====
 const COST = { fire: 3, ice: 5, shield: 2 }; // мана
-const DMG  = { fire: 7, ice: 5, shield: 0 }; // урон
-const MANA_REGEN = 2;                        // реген за ход
+const DMG  = { fire: 7, ice: 5, shield: 2 }; // урон
+const MANA_REGEN = 3;                        // реген за ход
 const START_HP = 30;
 const START_MANA = 10;
 // треугольник: слева побеждает справа → побеждённый наносит 0
 const BEATS = new Set(['fire>ice','ice>shield','shield>fire']);
 // таймер общего хода
-const TURN_MS = 15000; // 15 сек
+const TURN_MS = 10000; // 15 сек
 // матч: фиксированно 2 раунда
 const MAX_ROUNDS = 3; // best-of-3
 
@@ -289,7 +289,18 @@ io.on('connection', (socket) => {
     io.to(code).emit('event', { type:'ping', text: text || 'ping', from: socket.id.slice(0,6) });
   });
 
-  socket.on('disconnect', ()=>{
+  
+// перезапуск (рематч) — по запросу любого из игроков
+socket.on('restart_battle', ({code})=>{
+  const room = rooms.get(code);
+  if (!room) return;
+  // обнулим текущую битву и запустим новый отсчёт, если оба на месте
+  room.battle = null;
+  startCountdown(code);
+});
+
+socket.on('disconnect', ()=>{
+
     for (const [code, room] of rooms) {
       let changed = false;
       if (room.host && room.host.sid === socket.id) { room.host.disconnected = true; changed = true; }
